@@ -55,12 +55,15 @@ class SessionClient:
         self,
         count: Optional[int] = None,
         worker_ids: Optional[List[str]] = None,
+        dead: bool = False,
     ) -> List[str]:
-        """Remove workers by count (oldest first) or explicit IDs.
+        """Remove workers by count (oldest first), explicit IDs, or all dead workers.
         Returns list of removed worker_ids."""
         payload: Dict[str, Any] = {}
         params: Dict[str, Any] = {}
-        if count is not None:
+        if dead:
+            params["dead"] = "true"
+        elif count is not None:
             params["count"] = count
         if worker_ids:
             payload["worker_ids"] = worker_ids

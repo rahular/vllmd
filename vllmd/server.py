@@ -239,13 +239,16 @@ def add_workers(count: int = Query(1, ge=1)):
 @app.post("/workers/remove", response_model=RemoveWorkersResponse)
 def remove_workers(
     count: Optional[int] = Query(None, ge=1),
+    dead: bool = Query(False),
     req: RemoveRequest = Body(RemoveRequest()),
 ):
     with _lock:
         if _state is None:
             raise HTTPException(500, "Session state not initialised")
 
-        if req.worker_ids:
+        if dead:
+            to_remove = [w.worker_id for w in _state.workers.values() if w.status == WorkerStatus.DEAD]
+        elif req.worker_ids:
             to_remove = req.worker_ids
         elif count:
             # Pick the `count` oldest workers (by submission time)
@@ -255,7 +258,7 @@ def remove_workers(
             )
             to_remove = [w.worker_id for w in sorted_workers[:count]]
         else:
-            raise HTTPException(400, "Provide count or worker_ids")
+            raise HTTPException(400, "Provide count, worker_ids, or dead=true")
 
         removed = []
         job_ids_to_cancel = []
@@ -327,19 +330,6 @@ def _submit_worker_job(worker_id: str, port: int) -> str:
     if cfg.account:
         header_lines.append(f"#SBATCH --account={cfg.account}")
 
-    # Build vLLM args
-    vllm_args = [
-        f"--tensor-parallel-size {cfg.tensor_parallel_size}",
-    ]
-    if cfg.data_parallel_size > 1:
-        vllm_args.append(f"--data-parallel-size {cfg.data_parallel_size}")
-    if cfg.enable_expert_parallel:
-        vllm_args.append("--enable-expert-parallel")
-    if cfg.max_model_len:
-        vllm_args.append(f"--max-model-len {cfg.max_model_len}")
-    if cfg.vllm_extra_args:
-        vllm_args.append(cfg.vllm_extra_args)
-
     env_block = f"""\
 export VLLMD_SESSION_URL="{_state.manager_url}"
 export VLLMD_WORKER_ID="{worker_id}"
@@ -350,11 +340,13 @@ export VLLMD_DATA_PARALLEL_SIZE="{cfg.data_parallel_size}"
 export VLLMD_ENABLE_EXPERT_PARALLEL="{int(cfg.enable_expert_parallel)}"
 export VLLMD_GPU_MEM_UTIL="{cfg.gpu_mem_util}"
 export VLLMD_STARTUP_TIMEOUT="{cfg.startup_timeout}"
-export VLLMD_VLLM_EXTRA_ARGS={shlex.quote(" ".join(vllm_args[1:]) if len(vllm_args) > 1 else "")}
+export VLLMD_VLLM_EXTRA_ARGS={shlex.quote(cfg.vllm_extra_args or "")}
 export HF_HOME="{cfg.effective_hf_home}"
 export HF_HUB_OFFLINE="1"
 export TRANSFORMERS_OFFLINE="1"
 """
+    if cfg.max_model_len:
+        env_block += f'export VLLMD_MAX_MODEL_LEN="{cfg.max_model_len}"\n'
     if cfg.sif:
         env_block += f'export VLLMD_SIF="{cfg.sif}"\n'
         env_block += f'export VLLMD_SCRATCH="{cfg.scratch}"\n'

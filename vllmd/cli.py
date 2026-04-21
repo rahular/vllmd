@@ -214,10 +214,11 @@ def add(
 def remove(
     count: Optional[int]     = typer.Argument(None, help="Number of workers to remove (oldest first)."),
     worker_id: Optional[str] = typer.Option(None, "--worker-id", help="Specific worker ID to remove."),
+    dead: bool               = typer.Option(False, "--dead", help="Remove all dead workers.", is_flag=True),
 ):
     """Remove N workers (or a specific worker) from the current session."""
-    if count is None and worker_id is None:
-        rprint("[red]Error:[/red] Provide a count or --worker-id.")
+    if count is None and worker_id is None and not dead:
+        rprint("[red]Error:[/red] Provide a count, --worker-id, or --dead.")
         raise typer.Exit(1)
 
     sid = _require_session()
@@ -226,6 +227,7 @@ def remove(
     removed = client.remove_workers(
         count=count,
         worker_ids=[worker_id] if worker_id else None,
+        dead=dead,
     )
     rprint(f"[green]Removed:[/green] {', '.join(removed) if removed else 'none'}")
 
@@ -242,8 +244,10 @@ def status():
 
     data = client.status()
 
+    log_path = session_dir(sid) / "manager.log"
     rprint(f"\n[bold]Session:[/bold] {data['session_id']}")
     rprint(f"[bold]LB endpoint:[/bold] {data['lb_endpoint']}")
+    rprint(f"[bold]Manager:[/bold]     {data['manager_url']}  (log: {log_path})")
     rprint(f"[bold]Model:[/bold] {data['model']}  (tensor-parallel-size={data['tensor_parallel_size']}, data-parallel-size={data['data_parallel_size']}, enable-expert-parallel={data['enable_expert_parallel']})")
     rprint(
         f"[bold]Workers:[/bold] "
