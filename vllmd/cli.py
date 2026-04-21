@@ -103,7 +103,7 @@ def start(
         startup_timeout=startup_timeout,
     )
 
-host = socket.gethostname()
+    host = socket.gethostname()
     state = SessionState(config=cfg, manager_host=host)
     sdir = session_dir(name)
     sdir.mkdir(parents=True, exist_ok=True)
